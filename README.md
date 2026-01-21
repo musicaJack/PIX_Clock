@@ -1,161 +1,360 @@
-# ESP32C3 DS3231 + SSD1306 NTP Timer
+# PIX_Clock - ESP32-C3 Smart Clock
 
-基于ESP32-C3的NTP时间同步时钟，使用DS3231 RTC模块和SSD1306 OLED显示屏。
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Platform](https://img.shields.io/badge/platform-ESP32%20%20ESP32-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.0.0-orange.svg)
 
-## 功能特性
+English | [中文](README.zh.md)
 
-- ✅ 使用 DS3231 RTC 模块提供精确时间
-- ✅ SSD1306 128x64 蓝黄双色OLED显示屏显示时间
-- ✅ WiFi 配网功能（SoftAP 模式）
-- ✅ NTP 时间同步（每 720 小时同步一次）
-- ✅ 按键长按进入配网模式（GPIO3，长按3秒）
-- ✅ 低功耗设计（WiFi 仅在需要时启用）
-- ✅ DS3231 和 SSD1306 共用 I2C 总线
+A smart clock project based on ESP32-C3, using DS3231 RTC module and SSD1306 OLED display, with WiFi provisioning and NTP time synchronization capabilities.
 
-## 硬件连接
+![Running Effect](imgs/demo1.png)
 
-### ESP32-C3 引脚定义
+## ✨ Features
+
+### Core Features
+- ✅ **Precise Time Display**: Uses DS3231 RTC module for high-precision time (±2ppm accuracy)
+- ✅ **OLED Display**: 128x64 pixel SSD1306 OLED display showing time, date, weekday, and temperature
+- ✅ **WiFi Provisioning**: Supports SoftAP mode for easy WiFi configuration via web interface
+- ✅ **NTP Time Synchronization**: Automatically syncs time from network to ensure accuracy
+- ✅ **Low Power Design**: Intelligent WiFi module management, only enabled when needed
+- ✅ **Button Control**: Long press button to quickly enter provisioning mode
+
+### Display Features
+- **Time Display**: Format `HH:MM` with blinking colon every second
+- **Date Display**: Format `YYYY-MM-DD`
+- **Weekday Display**: Shows current weekday (Sun/Mon/Tue/Wed/Thu/Fri/Sat)
+- **Temperature Display**: Shows DS3231 built-in temperature sensor reading (format: `XX.Xc`)
+- **Auto Brightness**: Automatically adjusts display brightness based on time period
+  - Daytime (06:00-17:59): 100% brightness
+  - Nighttime (18:00-05:59): 75% brightness
+- **Burn-in Prevention**: Slightly shifts display position every 5 minutes to prevent OLED burn-in
+
+## 🔌 Hardware Connections
+
+### ESP32-C3 Pin Definitions
+
+| ESP32-C3 Pin | Connection | Description |
+|--------------|------------|-------------|
+| GPIO0 | SDA | I2C data line (DS3231 + SSD1306) |
+| GPIO1 | SCL | I2C clock line (DS3231 + SSD1306) |
+| GPIO3 | BUTTON | Button (long press 3 seconds to enter provisioning mode) |
+
+### Module Specifications
+
+- **DS3231 RTC Module**
+  - I2C Address: `0x68` (fixed)
+  - Accuracy: ±2ppm (approximately ±1 minute/year)
+  - Built-in temperature sensor
+  - Backup battery support (CR2032)
+
+- **SSD1306 OLED Display**
+  - I2C Address: `0x3C` (common, automatically tries `0x3D`)
+  - Resolution: 128x64 pixels
+  - Display Type: Blue-yellow dual color (upper half yellow, lower half blue)
+
+### Wiring Diagram
 
 ```
-ESP32C3:
-  GPIO_0 (SDA) -> DS3231 SDA + SSD1306 SDA
-  GPIO_1 (SCL) -> DS3231 SCL + SSD1306 SCL
-  GPIO_3 (BUTTON) -> 按键（长按3秒进入配网模式）
+ESP32-C3          DS3231          SSD1306
+   GPIO0  ──────── SDA ──────────── SDA
+   GPIO1  ──────── SCL ──────────── SCL
+   GPIO3  ──────── BUTTON (button)
+   GND    ──────── GND ──────────── GND
+   3.3V   ──────── VCC ──────────── VCC
 ```
 
-### 模块说明
+**Note**:
+- I2C bus has internal pull-up resistors enabled
+- If communication is unstable, external pull-up resistors (4.7kΩ) are recommended
+- DS3231 requires backup battery (CR2032) to maintain time after power loss
 
-- **DS3231 RTC**: I2C地址 0x68（固定）
-- **SSD1306 OLED**: I2C地址 0x3C（常见，如果不行可以尝试0x3D）
-- **分辨率**: 128x64 像素
-- **显示颜色**: 蓝黄双色（上半部分黄色，下半部分蓝色）
+## 🚀 Build and Flash
 
-## 编译和烧录
+### Requirements
+
+- ESP-IDF v5.0 or higher
+- CMake 3.16 or higher
+- Python 3.6 or higher
+
+### Build Steps
 
 ```bash
-# 设置ESP-IDF环境（如果还没有设置）
+# Set up ESP-IDF environment (if not already set)
 . $HOME/esp/esp-idf/export.sh
+# Windows: .\esp-idf\export.bat
 
-# 编译项目
+# Enter project directory
+cd PIX_Clock
+
+# Configure project (optional, uses default config)
+idf.py menuconfig
+
+# Build project
 idf.py build
 
-# 烧录到设备
+# Flash to device
 idf.py flash
 
-# 查看串口输出
+# View serial output
 idf.py monitor
+# Or use Ctrl+] to exit monitor
 ```
 
-## WiFi 配网说明
+### One-Command Build and Flash
 
-### 首次使用
+```bash
+idf.py flash monitor
+```
 
-1. 设备上电后，如果没有保存的 WiFi 配置，会自动进入配网模式
-2. 设备会创建一个名为 `VFD_Clock_Setup` 的 WiFi 热点，密码为 `12345678`
-3. 使用手机或电脑连接到该热点
-4. 打开浏览器，访问 `http://192.168.4.1`
-5. 在配网页面输入您的 WiFi 名称（SSID）和密码
-6. 点击"连接"按钮
-7. 设备会自动保存配置并连接到您指定的 WiFi 网络
-8. 连接成功后，设备会断开配网热点，并开始 NTP 时间同步
+## 📶 WiFi Provisioning
 
-### 按键配网（推荐）
+### First Use (Auto Provisioning)
 
-1. **长按 GPIO3 按键 3 秒**，设备会立即进入配网模式
-2. **重要**：按键长按会**清除旧的 WiFi 配置**（强制重置），然后进入配网模式
-3. 按照上述步骤 2-7 完成配网
-4. **重要**：通过按键触发的配网，连接成功后会**强制进行 NTP 时间同步**（忽略 720 小时限制），确保时间准确
-5. **注意**：按键长按检测在**任何时候**都有效，即使设备正在运行中也可以触发配网模式
+1. After power-on, if no saved WiFi configuration exists, the device **automatically enters provisioning mode**
+2. The device creates a WiFi hotspot named `VFD_Clock_Setup`
+3. Connect to the hotspot using a phone or computer
+   - **SSID**: `VFD_Clock_Setup`
+   - **Password**: `12345678`
+4. Open a browser and visit `http://192.168.4.1`
+5. Enter your WiFi information on the provisioning page:
+   - WiFi name (SSID)
+   - WiFi password
+6. Click the "Connect" button
+7. The device automatically saves the configuration and connects to your specified WiFi network
+8. After successful connection, the device disconnects the provisioning hotspot and starts NTP time synchronization
 
-### 自动重新配网
+### Button Provisioning (Recommended)
 
-如果 WiFi 连接失败（5次重试都失败），设备会：
-1. 自动清除旧的无效配置
-2. 进入配网模式
-3. 等待用户重新配置 WiFi
+If you need to reconfigure WiFi or change networks:
 
-## 技术细节
+1. **Long press GPIO3 button for 3 seconds**
+2. The device immediately enters provisioning mode
+3. **Important**: Button long press will **clear old WiFi configuration** (forced reset)
+4. Follow steps 3-8 above to complete provisioning
+5. **Important**: Provisioning triggered by button will **force NTP time synchronization** after successful connection (ignoring 720-hour limit) to ensure time accuracy
 
-### 系统初始化顺序
-1. **NVS 初始化**：用于存储 WiFi 配置和同步时间戳
-2. **时区设置**：在系统启动时立即设置时区（CST-8 UTC+8）
-3. **硬件初始化**：I2C、DS3231、SSD1306 显示屏
-4. **WiFi 配网模块初始化**
-5. **NTP 同步需求检查**：基于时区设置计算时间差
+### Auto Re-provisioning
 
-### I2C 总线共享
-- DS3231 和 SSD1306 使用同一个 I2C 总线实例
-- 通过不同的 I2C 设备地址区分（DS3231: 0x68, SSD1306: 0x3C）
-- I2C 总线配置：100kHz（DS3231），400kHz（SSD1306）
+If WiFi connection fails (all 5 retries fail), the device will:
 
-### WiFi 连接重试机制
-- 最多重试 5 次
-- 每次重试间隔 15 秒
-- 第一次失败时自动扫描可用 WiFi 网络（用于诊断）
-- 5 次都失败后自动清除配置并进入配网模式
+1. Automatically clear old invalid configuration
+2. Enter provisioning mode
+3. Wait for user to reconfigure WiFi
 
-### NTP 时间同步策略
-- 默认：每 720 小时（30天）同步一次
-- **重要优化**：如果不需要 NTP 同步（720小时内已同步），**不会启动 WiFi 模块**，节省功耗
-- 按键配网：强制同步（忽略时间限制）
-- 同步超时：60 秒
-- 同步成功后自动更新 DS3231 RTC
-- **时区处理**：
-  - 系统启动时立即设置时区（CST-8 UTC+8）
-  - 时区设置必须在检查 NTP 同步需求之前完成
-  - 使用 `mktime()` 将 DS3231 本地时间转换为 UTC 时间戳时，依赖已设置的时区
-  - 时间差计算基于 UTC 时间戳，确保准确性
-  - NTP 同步后保存 UTC 时间戳到 NVS，用于后续时间差计算
+## ⏰ NTP Time Synchronization
 
-### 低功耗设计
-- **核心优化**：如果不需要 NTP 同步，WiFi 模块**完全不启动**，大幅降低功耗
-- WiFi 仅在需要时启用（NTP 同步或配网时）
-- 使用 DS3231 RTC 保持时间精度，无需 WiFi 即可正常工作
-- NTP 同步完成后可关闭 WiFi（如果不需要持续连接）
+### Synchronization Strategy
 
-### 按键功能
-- **GPIO3 长按 3 秒**：在任何时候都可以触发配网模式
-- 按键触发配网会**强制清除旧的 WiFi 配置**
-- 按键触发配网成功后**强制进行 NTP 同步**（忽略 720 小时限制）
-- 按键检测在主循环中持续运行，响应及时
+- **Default Interval**: Sync every 720 hours (30 days)
+- **Smart Detection**: If synced within 720 hours, **WiFi module will not start**, saving power
+- **Forced Sync**: Button provisioning triggers forced sync (ignoring time limit)
+- **Sync Timeout**: Close WiFi if sync fails within 60 seconds
 
-## 项目结构
+### NTP Servers
+
+- Primary Server: `cn.pool.ntp.org`
+- Backup Server: `time.windows.com`
+- Backup Server: `pool.ntp.org`
+
+### Timezone Settings
+
+- Default Timezone: **CST-8 (UTC+8, Beijing Time)**
+- Timezone is set immediately at system startup
+- All time display and calculations are based on local time
+
+### Time Synchronization Flow
+
+1. Check if synchronization is needed (based on last sync timestamp)
+2. If needed, start WiFi and connect
+3. After WiFi connection succeeds, initialize SNTP client
+4. Wait for NTP server response (up to 60 seconds)
+5. After successful sync, update DS3231 RTC time
+6. Save sync timestamp to NVS
+7. Close WiFi to save power
+
+## 🔋 Low Power Design
+
+### Power Optimization Strategy
+
+1. **WiFi Intelligent Management**:
+   - WiFi only enabled when NTP sync or provisioning is needed
+   - If sync is not needed (synced within 720 hours), WiFi module does not start at all
+   - WiFi is closed immediately after NTP sync completes
+
+2. **DS3231 RTC Time Keeping**:
+   - Uses high-precision RTC module to maintain time
+   - Backup battery maintains time after power loss
+   - Works normally without WiFi
+
+3. **Display Optimization**:
+   - Automatically adjusts brightness based on time period
+   - Reduces brightness at night to save power
+
+## 🎛️ Button Functions
+
+### GPIO3 Button
+
+- **Function**: Long press 3 seconds to enter provisioning mode
+- **Features**:
+  - Can be triggered at any time (main loop continuously detects)
+  - Clears old WiFi configuration after trigger
+  - Forces NTP synchronization after successful provisioning
+  - Responsive, no waiting required
+
+### Button Detection Mechanism
+
+- Uses GPIO interrupt to detect button state
+- Detects long press duration (3 seconds) in main loop
+- Supports both rising and falling edge triggers
+
+## 📁 Project Structure
 
 ```
-ESP32C3_ds3231_ssd1306/
-├── CMakeLists.txt                    # 项目级CMakeLists
+PIX_Clock/
+├── CMakeLists.txt                    # Project-level CMakeLists
 ├── main/
-│   ├── CMakeLists.txt                # main目录CMakeLists
-│   ├── main.c                        # 主程序
+│   ├── CMakeLists.txt                # Main directory CMakeLists
+│   ├── main.c                        # Main program
 │   └── lib/
-│       ├── ds3231/                   # DS3231驱动
+│       ├── ds3231/                   # DS3231 driver
 │       │   ├── ds3231.h
 │       │   └── ds3231_driver.c
-│       ├── ssd1306/                  # SSD1306驱动
+│       ├── ssd1306/                  # SSD1306 driver
 │       │   ├── ssd1306.h
 │       │   └── ssd1306.c
-│       └── wifi_provisioning/        # WiFi配网模块
+│       └── wifi_provisioning/        # WiFi provisioning module
 │           ├── wifi_provisioning.h
 │           └── wifi_provisioning.c
-└── sdkconfig                         # ESP-IDF配置文件
+├── sdkconfig                         # ESP-IDF configuration file
+└── README.md                         # Project documentation
 ```
 
-## 从Demo项目迁移
+## 🔧 Technical Details
 
-本项目是从 `demo/FutabaVFD_Display_ESP32_C3` 项目迁移而来，主要变更：
+### I2C Bus Configuration
 
-1. **显示模块**：从 FutabaVFD（SPI接口）替换为 SSD1306（I2C接口）
-2. **I2C总线共享**：DS3231 和 SSD1306 共用 GPIO0/GPIO1
-3. **移除SPI**：删除所有 SPI 相关代码和依赖
-4. **功能保持**：所有其他功能完全保持不变（NTP同步、WiFi配网、按键功能等）
+- **Bus Sharing**: DS3231 and SSD1306 share the same I2C bus
+- **Device Addresses**:
+  - DS3231: `0x68` (fixed)
+  - SSD1306: `0x3C` (automatically tries `0x3D`)
+- **Bus Speed**:
+  - DS3231: 100kHz
+  - SSD1306: 400kHz
+- **Pull-up Resistors**: Internal pull-ups enabled
 
-## 注意事项
+### WiFi Connection Retry Mechanism
 
-1. **I2C地址**：如果SSD1306使用0x3C地址无法通信，可以尝试0x3D，修改 `main/main.c` 中的 `SSD1306_I2C_ADDR` 定义
-2. **上拉电阻**：I2C总线已启用内部上拉，如果通信不稳定，建议添加外部上拉电阻（4.7kΩ）
-3. **显示效果**：SSD1306显示时间格式为 `hh:mm:ss`，居中显示，使用2倍大小字体
-4. **双色显示**：128x64蓝黄双色模块，上半部分（0-31行）为黄色，下半部分（32-63行）为蓝色
+- **Max Retries**: 5 times
+- **Retry Interval**: 15 seconds
+- **Diagnostic Feature**: Automatically scans available WiFi networks on first failure
+- **Failure Handling**: After 5 failures, automatically clears configuration and enters provisioning mode
 
-## 许可证
+### NVS Storage
 
-本项目基于demo项目迁移，保持相同的许可证。
+The project uses two independent NVS namespaces:
+
+- **`wifi_config`**: Stores WiFi configuration (SSID and password)
+- **`time_sync`**: Stores last NTP sync timestamp
+
+Namespace isolation ensures they don't affect each other.
+
+### Display Refresh Mechanism
+
+- **Refresh Rate**: Updates display every second
+- **Time Reading**: Reads time from DS3231 RTC
+- **Display Content**: Time, date, weekday, temperature
+- **Pixel Shift**: Cycles through 8 positions every 5 minutes
+
+## ⚠️ Notes
+
+1. **I2C Address**:
+   - If SSD1306 cannot communicate at `0x3C` address, code automatically tries `0x3D`
+   - If both addresses fail, system continues running but without display (serial output shows error)
+
+2. **Pull-up Resistors**:
+   - I2C bus has internal pull-ups enabled
+   - If communication is unstable, external pull-up resistors (4.7kΩ) are recommended
+
+3. **DS3231 Backup Battery**:
+   - CR2032 backup battery installation is recommended
+   - Backup battery maintains time after power loss
+   - Without backup battery, time will be lost after power loss
+
+4. **WiFi Configuration**:
+   - WiFi configuration is saved in NVS and persists after power loss
+   - Clearing configuration requires button long press or re-provisioning
+
+5. **Time Synchronization**:
+   - First use requires WiFi configuration to sync time
+   - If WiFi is not configured or connection fails, device uses current DS3231 time
+   - Manual DS3231 time setting is recommended before first use (if possible)
+
+6. **Display Effect**:
+   - 128x64 blue-yellow dual-color OLED, upper half (rows 0-31) yellow, lower half (rows 32-63) blue
+   - Time uses 2x size font, center-aligned
+   - Date, weekday, temperature use 1x size font
+
+## 🐛 Troubleshooting
+
+### Issue: Cannot Connect to WiFi
+
+**Solutions**:
+1. Check if WiFi name and password are correct
+2. Confirm router supports 2.4GHz band (ESP32-C3 does not support 5GHz)
+3. Check if router has MAC address filtering enabled
+4. Check serial output WiFi scan results to confirm if target SSID is in the list
+
+### Issue: Time Display Inaccurate
+
+**Solutions**:
+1. Check if DS3231 is working properly (check serial logs)
+2. Confirm WiFi is connected and NTP time sync succeeded
+3. Check if timezone setting is correct (default UTC+8)
+4. If not synced for a long time, use button long press to force sync
+
+### Issue: OLED Display Shows Nothing
+
+**Solutions**:
+1. Check if I2C connections are correct (SDA, SCL, GND, VCC)
+2. Check serial logs to confirm if SSD1306 initialized successfully
+3. Try modifying I2C address in code (`0x3C` or `0x3D`)
+4. Check if display is damaged (try another SSD1306 module)
+
+### Issue: Button Not Responding
+
+**Solutions**:
+1. Check if button connection is correct (GPIO3)
+2. Confirm button press is low level (code has pull-up enabled)
+3. Check if button is damaged
+4. Check serial logs to confirm if GPIO initialization succeeded
+
+## 📝 Changelog
+
+### v1.0.0 (Current Version)
+
+- ✅ Implemented DS3231 RTC time reading and display
+- ✅ Implemented SSD1306 OLED display functionality
+- ✅ Implemented WiFi provisioning (SoftAP mode)
+- ✅ Implemented NTP time synchronization
+- ✅ Implemented button long press provisioning
+- ✅ Implemented auto brightness adjustment
+- ✅ Implemented pixel shift burn-in prevention
+- ✅ Implemented low power design (intelligent WiFi management)
+
+## 📄 License
+
+This project is developed based on ESP-IDF and follows the corresponding open source license.
+
+## 🙏 Acknowledgments
+
+- ESP-IDF development framework
+- DS3231 RTC module
+- SSD1306 OLED display
+
+---
+
+**Project Name**: PIX_Clock  
+**Hardware Platform**: ESP32-C3  
+**Development Framework**: ESP-IDF v5.0+  
+**Last Updated**: 2024

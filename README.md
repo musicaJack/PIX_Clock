@@ -39,6 +39,7 @@ A smart clock project based on ESP32-C3, using DS3231 RTC module and SSD1306 OLE
 | GPIO0 | SDA | I2C data line (DS3231 + SSD1306) |
 | GPIO1 | SCL | I2C clock line (DS3231 + SSD1306) |
 | GPIO3 | BUTTON | Button (long press 3 seconds to enter provisioning mode) |
+| VBUS | TP4096 Battery Input | Power input from TP4096 lithium battery charging module |
 
 ### Module Specifications
 
@@ -53,21 +54,38 @@ A smart clock project based on ESP32-C3, using DS3231 RTC module and SSD1306 OLE
   - Resolution: 128x64 pixels
   - Display Type: Blue-yellow dual color (upper half yellow, lower half blue)
 
+- **Power Supply**
+  - **TP4096 Lithium Battery Charging Module**
+    - Battery Input: Connected to ESP32-C3 VBUS pin
+    - Charging Interface: Type-C port on the panel (for charging the lithium battery)
+    - Battery Capacity: 850mAh lithium battery
+    - Function: Provides portable power supply for the device
+
 ### Wiring Diagram
 
 ```
-ESP32-C3          DS3231          SSD1306
+ESP32-C3          DS3231          SSD1306          TP4096
    GPIO0  ──────── SDA ──────────── SDA
    GPIO1  ──────── SCL ──────────── SCL
    GPIO3  ──────── BUTTON (button)
-   GND    ──────── GND ──────────── GND
+   VBUS   ──────── Battery Input (from TP4096)
+   GND    ──────── GND ──────────── GND ──────────── GND
    3.3V   ──────── VCC ──────────── VCC
+
+TP4096 Module:
+   Battery Input ──── ESP32-C3 VBUS
+   Type-C Port ────── Panel Type-C (for charging)
+   850mAh Battery ──── Connected to TP4096
 ```
 
 **Note**:
 - I2C bus has internal pull-up resistors enabled
 - If communication is unstable, external pull-up resistors (4.7kΩ) are recommended
 - DS3231 requires backup battery (CR2032) to maintain time after power loss
+- **Power Supply**: The device uses a TP4096 lithium battery charging module with an 850mAh battery
+  - ESP32-C3 VBUS pin is connected to TP4096 battery output
+  - Type-C port on the panel is used for charging the lithium battery
+  - The device can operate on battery power, making it portable
 
 ## 🚀 Build and Flash
 

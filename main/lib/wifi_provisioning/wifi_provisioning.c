@@ -13,20 +13,20 @@
 
 static const char *TAG = "wifi_prov";
 
-// NVS 配置
-// 注意：使用独立的命名空间 "wifi_config"，与项目中其他 NVS 命名空间（如 "time_sync"）隔离
-// 因此不会覆盖或影响其他模块的 NVS 数据
+// NVS configuration
+// Note: Use independent namespace "wifi_config", isolated from other NVS namespaces in the project (such as "time_sync")
+// Therefore will not overwrite or affect NVS data from other modules
 #define NVS_NAMESPACE_WIFI     "wifi_config"
 #define NVS_KEY_SSID           "ssid"
 #define NVS_KEY_PASSWORD       "password"
 
-// SoftAP 配置
+// SoftAP configuration
 #define SOFTAP_SSID            "PIX_Clock_Setup"
 #define SOFTAP_PASSWORD        "12345678"
 #define SOFTAP_CHANNEL         1
 #define SOFTAP_MAX_CONNECTIONS 4
 
-// 全局变量
+// Global variables
 static httpd_handle_t s_httpd_handle = NULL;
 static wifi_prov_status_cb_t s_status_cb = NULL;
 static esp_netif_t *s_ap_netif = NULL;
@@ -34,14 +34,14 @@ static esp_netif_t *s_sta_netif = NULL;
 static bool s_wifi_connected = false;
 static char s_connected_ip[16] = {0};
 
-// 配网网页 HTML
+// Provisioning web page HTML
 static const char* PROVISIONING_HTML = 
 "<!DOCTYPE html>"
 "<html>"
 "<head>"
 "<meta charset='UTF-8'>"
 "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
-"<title>WiFi 配网</title>"
+"<title>WiFi Provisioning</title>"
 "<style>"
 "body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }"
 ".container { max-width: 400px; margin: 50px auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }"
@@ -58,13 +58,13 @@ static const char* PROVISIONING_HTML =
 "</head>"
 "<body>"
 "<div class='container'>"
-"<h1>WiFi 配网</h1>"
+"<h1>WiFi Provisioning</h1>"
 "<form id='wifiForm'>"
-"<label for='ssid'>WiFi 名称 (SSID):</label>"
+"<label for='ssid'>WiFi Name (SSID):</label>"
 "<input type='text' id='ssid' name='ssid' required autocomplete='off'>"
-"<label for='password'>WiFi 密码:</label>"
+"<label for='password'>WiFi Password:</label>"
 "<input type='password' id='password' name='password' autocomplete='off'>"
-"<button type='submit'>连接</button>"
+"<button type='submit'>Connect</button>"
 "</form>"
 "<div id='status'></div>"
 "</div>"
@@ -76,7 +76,7 @@ static const char* PROVISIONING_HTML =
 "const statusDiv = document.getElementById('status');"
 "const button = document.querySelector('button');"
 "button.disabled = true;"
-"button.textContent = '连接中...';"
+"button.textContent = 'Connecting...';"
 "statusDiv.innerHTML = '';"
 "try {"
 "const formData = new URLSearchParams();"
@@ -92,26 +92,26 @@ static const char* PROVISIONING_HTML =
 "try { data = JSON.parse(text); } catch(e) { data = {success: false, message: text}; }"
 "if (data.success) {"
 "statusDiv.className = 'status success';"
-"statusDiv.innerHTML = '配置成功！设备正在连接 WiFi，请稍候...';"
-"setTimeout(() => { statusDiv.innerHTML += '<br>如果连接成功，设备将断开此热点。'; }, 2000);"
+"statusDiv.innerHTML = 'Configuration successful! Device is connecting to WiFi, please wait...';"
+"setTimeout(() => { statusDiv.innerHTML += '<br>If connection succeeds, the device will disconnect this hotspot.'; }, 2000);"
 "} else {"
 "statusDiv.className = 'status error';"
-"statusDiv.innerHTML = '配置失败: ' + (data.message || '未知错误');"
+"statusDiv.innerHTML = 'Configuration failed: ' + (data.message || 'Unknown error');"
 "button.disabled = false;"
-"button.textContent = '连接';"
+"button.textContent = 'Connect';"
 "}"
 "} catch (error) {"
 "statusDiv.className = 'status error';"
-"statusDiv.innerHTML = '网络错误: ' + error.message;"
+"statusDiv.innerHTML = 'Network error: ' + error.message;"
 "button.disabled = false;"
-"button.textContent = '连接';"
+"button.textContent = 'Connect';"
 "}"
 "});"
 "</script>"
 "</body>"
 "</html>";
 
-// HTTP 处理函数：根路径
+// HTTP handler: root path
 static esp_err_t root_get_handler(httpd_req_t *req)
 {
     httpd_resp_set_type(req, "text/html; charset=utf-8");
@@ -119,13 +119,13 @@ static esp_err_t root_get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-// URL 解码函数
+// URL decode function
 static void url_decode(char *str) {
     char *src = str;
     char *dst = str;
     
     while (*src) {
-        // 将 char 转换为 unsigned char 以符合 isxdigit 的要求
+        // Convert char to unsigned char to meet isxdigit requirements
         if (*src == '%' && isxdigit((unsigned char)src[1]) && isxdigit((unsigned char)src[2])) {
             int value;
             sscanf(src + 1, "%2x", &value);
@@ -141,7 +141,7 @@ static void url_decode(char *str) {
     *dst = '\0';
 }
 
-// 从 URL 编码的表单数据中提取值
+// Extract value from URL-encoded form data
 static char* get_form_value(const char *data, const char *key, char *value, size_t value_len) {
     char key_pattern[64];
     snprintf(key_pattern, sizeof(key_pattern), "%s=", key);
@@ -165,12 +165,12 @@ static char* get_form_value(const char *data, const char *key, char *value, size
     return value;
 }
 
-// HTTP 处理函数：WiFi 配置 POST
+// HTTP handler: WiFi configuration POST
 static esp_err_t wifi_post_handler(httpd_req_t *req)
 {
     char content[256];
     
-    // 读取请求内容
+    // Read request content
     int recv_len = httpd_req_recv(req, content, sizeof(content) - 1);
     if (recv_len <= 0) {
         httpd_resp_set_status(req, HTTPD_400);
@@ -181,7 +181,7 @@ static esp_err_t wifi_post_handler(httpd_req_t *req)
     
     ESP_LOGI(TAG, "Received WiFi config: %s", content);
     
-    // 解析表单数据
+    // Parse form data
     wifi_config_data_t config;
     config.ssid[0] = '\0';
     config.password[0] = '\0';
@@ -198,10 +198,10 @@ static esp_err_t wifi_post_handler(httpd_req_t *req)
     ESP_LOGI(TAG, "Saving WiFi config: SSID=%s, Password=%s", config.ssid, 
              strlen(config.password) > 0 ? "***" : "(empty)");
     
-    // 保存配置
+    // Save configuration
     esp_err_t err = wifi_provisioning_save_config(&config);
     
-    // 发送响应
+    // Send response
     httpd_resp_set_type(req, "application/json");
     if (err == ESP_OK) {
         httpd_resp_send(req, "{\"success\":true,\"message\":\"Config saved\"}", HTTPD_RESP_USE_STRLEN);
@@ -215,7 +215,7 @@ static esp_err_t wifi_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-// WiFi 事件处理（配网模块内部）
+// WiFi event handler (internal to provisioning module)
 static void wifi_prov_event_handler(void* arg, esp_event_base_t event_base,
                               int32_t event_id, void* event_data)
 {
@@ -243,7 +243,7 @@ static void wifi_prov_event_handler(void* arg, esp_event_base_t event_base,
                 break;
             case WIFI_EVENT_STA_START:
                 ESP_LOGI(TAG, "WiFi Station started");
-                // 延迟一小段时间确保 WiFi 驱动完全初始化
+                // Delay briefly to ensure WiFi driver is fully initialized
                 vTaskDelay(pdMS_TO_TICKS(100));
                 esp_err_t ret = esp_wifi_connect();
                 if (ret != ESP_OK) {
@@ -279,11 +279,11 @@ static void wifi_prov_event_handler(void* arg, esp_event_base_t event_base,
     }
 }
 
-// 初始化 HTTP 服务器
+// Initialize HTTP server
 static esp_err_t start_http_server(void)
 {
     if (s_httpd_handle != NULL) {
-        return ESP_OK;  // 已经启动
+        return ESP_OK;  // Already started
     }
     
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
@@ -291,7 +291,7 @@ static esp_err_t start_http_server(void)
     
     ESP_LOGI(TAG, "Starting HTTP server on port: '%d'", config.server_port);
     if (httpd_start(&s_httpd_handle, &config) == ESP_OK) {
-        // 注册 URI 处理器
+        // Register URI handlers
         httpd_uri_t root = {
             .uri       = "/",
             .method    = HTTP_GET,
@@ -316,7 +316,7 @@ static esp_err_t start_http_server(void)
     return ESP_FAIL;
 }
 
-// 停止 HTTP 服务器
+// Stop HTTP server
 static void stop_http_server(void)
 {
     if (s_httpd_handle != NULL) {
@@ -330,19 +330,19 @@ esp_err_t wifi_provisioning_init(void)
 {
     ESP_LOGI(TAG, "Initializing WiFi provisioning module");
     
-    // 初始化网络接口
+    // Initialize network interface
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     
-    // 创建 SoftAP 和 Station 网络接口
+    // Create SoftAP and Station network interfaces
     s_ap_netif = esp_netif_create_default_wifi_ap();
     s_sta_netif = esp_netif_create_default_wifi_sta();
     
-    // 初始化 WiFi
+    // Initialize WiFi
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     
-    // 注册事件处理器
+    // Register event handlers
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
                                                         ESP_EVENT_ANY_ID,
                                                         &wifi_prov_event_handler,
@@ -375,7 +375,7 @@ esp_err_t wifi_provisioning_load_config(wifi_config_data_t *config)
         return err;
     }
     
-    // 读取 SSID
+    // Read SSID
     size_t required_size = sizeof(config->ssid);
     err = nvs_get_str(nvs_handle, NVS_KEY_SSID, config->ssid, &required_size);
     if (err != ESP_OK) {
@@ -384,7 +384,7 @@ esp_err_t wifi_provisioning_load_config(wifi_config_data_t *config)
         return err;
     }
     
-    // 读取密码
+    // Read password
     required_size = sizeof(config->password);
     err = nvs_get_str(nvs_handle, NVS_KEY_PASSWORD, config->password, &required_size);
     if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) {
@@ -393,7 +393,7 @@ esp_err_t wifi_provisioning_load_config(wifi_config_data_t *config)
         return err;
     }
     
-    // 如果密码不存在，设置为空字符串
+    // If password doesn't exist, set to empty string
     if (err == ESP_ERR_NVS_NOT_FOUND) {
         config->password[0] = '\0';
     }
@@ -419,7 +419,7 @@ esp_err_t wifi_provisioning_save_config(const wifi_config_data_t *config)
         return err;
     }
     
-    // 保存 SSID
+    // Save SSID
     err = nvs_set_str(nvs_handle, NVS_KEY_SSID, config->ssid);
     if (err != ESP_OK) {
         nvs_close(nvs_handle);
@@ -427,7 +427,7 @@ esp_err_t wifi_provisioning_save_config(const wifi_config_data_t *config)
         return err;
     }
     
-    // 保存密码
+    // Save password
     err = nvs_set_str(nvs_handle, NVS_KEY_PASSWORD, config->password);
     if (err != ESP_OK) {
         nvs_close(nvs_handle);
@@ -453,7 +453,7 @@ esp_err_t wifi_provisioning_start_softap(wifi_prov_status_cb_t status_cb)
     
     ESP_LOGI(TAG, "Starting SoftAP: SSID=%s, Password=%s", SOFTAP_SSID, SOFTAP_PASSWORD);
     
-    // 配置 SoftAP
+    // Configure SoftAP
     wifi_config_t wifi_config = {
         .ap = {
             .ssid = SOFTAP_SSID,
@@ -473,7 +473,7 @@ esp_err_t wifi_provisioning_start_softap(wifi_prov_status_cb_t status_cb)
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
     
-    // 启动 HTTP 服务器
+    // Start HTTP server
     esp_err_t ret = start_http_server();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start HTTP server");
@@ -491,10 +491,10 @@ esp_err_t wifi_provisioning_stop_softap(void)
 {
     ESP_LOGI(TAG, "Stopping SoftAP");
     
-    // 停止 HTTP 服务器
+    // Stop HTTP server
     stop_http_server();
     
-    // 停止 WiFi
+    // Stop WiFi
     esp_err_t ret = esp_wifi_stop();
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "Failed to stop WiFi: %s", esp_err_to_name(ret));
@@ -514,14 +514,14 @@ esp_err_t wifi_provisioning_start_sta(const wifi_config_data_t *config, wifi_pro
     
     ESP_LOGI(TAG, "Starting WiFi Station: SSID=%s", config->ssid);
     
-    // 配置 Station
-    // 注意：threshold.authmode 设置为 WIFI_AUTH_OPEN 以支持所有认证模式
-    // 这样可以自动适配 WPA、WPA2、WPA3 等不同的认证方式
+    // Configure Station
+    // Note: threshold.authmode is set to WIFI_AUTH_OPEN to support all authentication modes
+    // This allows automatic adaptation to different authentication methods like WPA, WPA2, WPA3, etc.
     wifi_config_t wifi_config = {
         .sta = {
-            .threshold.authmode = WIFI_AUTH_OPEN,  // 支持所有认证模式
-            .scan_method = WIFI_FAST_SCAN,  // 快速扫描
-            .sort_method = WIFI_CONNECT_AP_BY_SIGNAL,  // 按信号强度排序
+            .threshold.authmode = WIFI_AUTH_OPEN,  // Support all authentication modes
+            .scan_method = WIFI_FAST_SCAN,  // Fast scan
+            .sort_method = WIFI_CONNECT_AP_BY_SIGNAL,  // Sort by signal strength
         },
     };
     
@@ -555,8 +555,8 @@ bool wifi_provisioning_has_config(void)
 
 esp_err_t wifi_provisioning_clear_config(void)
 {
-    // 注意：nvs_erase_all() 只会擦除当前命名空间 "wifi_config" 的数据
-    // 不会影响其他命名空间（如 "time_sync"）的数据
+    // Note: nvs_erase_all() only erases data in the current namespace "wifi_config"
+    // It will not affect data in other namespaces (such as "time_sync")
     nvs_handle_t nvs_handle;
     esp_err_t err = nvs_open(NVS_NAMESPACE_WIFI, NVS_READWRITE, &nvs_handle);
     if (err != ESP_OK) {

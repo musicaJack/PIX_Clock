@@ -8,88 +8,88 @@
 extern "C" {
 #endif
 
-// WiFi 配置结构
+// WiFi configuration structure
 typedef struct {
-    char ssid[33];      // WiFi SSID（最大32字符 + null terminator）
-    char password[65];  // WiFi 密码（最大64字符 + null terminator）
+    char ssid[33];      // WiFi SSID (max 32 characters + null terminator)
+    char password[65];  // WiFi password (max 64 characters + null terminator)
 } wifi_config_data_t;
 
-// 配网状态回调函数类型
+// Provisioning status callback function type
 typedef void (*wifi_prov_status_cb_t)(bool connected, const char* ip);
 
 /**
- * @brief 初始化 WiFi 配网模块
+ * @brief Initialize WiFi provisioning module
  * 
  * @return 
- *    - ESP_OK: 成功
- *    - 其他: 失败
+ *    - ESP_OK: Success
+ *    - Others: Failure
  */
 esp_err_t wifi_provisioning_init(void);
 
 /**
- * @brief 从 NVS 读取 WiFi 配置
+ * @brief Load WiFi configuration from NVS
  * 
- * @param config 输出参数，保存读取的配置
+ * @param config Output parameter, stores the loaded configuration
  * @return 
- *    - ESP_OK: 成功读取配置
- *    - ESP_ERR_NOT_FOUND: 未找到配置
- *    - 其他: 读取失败
+ *    - ESP_OK: Successfully loaded configuration
+ *    - ESP_ERR_NOT_FOUND: Configuration not found
+ *    - Others: Failed to load
  */
 esp_err_t wifi_provisioning_load_config(wifi_config_data_t *config);
 
 /**
- * @brief 保存 WiFi 配置到 NVS
+ * @brief Save WiFi configuration to NVS
  * 
- * @param config 要保存的配置
+ * @param config Configuration to save
  * @return 
- *    - ESP_OK: 成功
- *    - 其他: 失败
+ *    - ESP_OK: Success
+ *    - Others: Failure
  */
 esp_err_t wifi_provisioning_save_config(const wifi_config_data_t *config);
 
 /**
- * @brief 启动 SoftAP 配网模式
+ * @brief Start SoftAP provisioning mode
  * 
- * @param status_cb 配网状态回调函数（可选，可为 NULL）
+ * @param status_cb Provisioning status callback function (optional, can be NULL)
  * @return 
- *    - ESP_OK: 成功
- *    - 其他: 失败
+ *    - ESP_OK: Success
+ *    - Others: Failure
  */
 esp_err_t wifi_provisioning_start_softap(wifi_prov_status_cb_t status_cb);
 
 /**
- * @brief 停止 SoftAP 配网模式
+ * @brief Stop SoftAP provisioning mode
  * 
  * @return 
- *    - ESP_OK: 成功
- *    - 其他: 失败
+ *    - ESP_OK: Success
+ *    - Others: Failure
  */
 esp_err_t wifi_provisioning_stop_softap(void);
 
 /**
- * @brief 启动 WiFi Station 模式并连接
+ * @brief Start WiFi Station mode and connect
  * 
- * @param config WiFi 配置
- * @param status_cb 连接状态回调函数（可选，可为 NULL）
+ * @param config WiFi configuration
+ * @param status_cb Connection status callback function (optional, can be NULL)
  * @return 
- *    - ESP_OK: 成功启动连接
- *    - 其他: 失败
+ *    - ESP_OK: Successfully started connection
+ *    - Others: Failure
  */
 esp_err_t wifi_provisioning_start_sta(const wifi_config_data_t *config, wifi_prov_status_cb_t status_cb);
 
 /**
- * @brief 检查是否有保存的 WiFi 配置
+ * @brief Check if there is saved WiFi configuration
  * 
- * @return true 有配置，false 无配置
+ * @return true if configuration exists, false otherwise
  */
 bool wifi_provisioning_has_config(void);
 
 /**
- * @brief 清除保存的 WiFi 配置
+ * @brief Clear saved WiFi configuration
  * 
  * @return 
- *    - ESP_OK: 成功
- *    - 其他: 失败
+ *    - ESP_OK: Success
+ *    - Others: Failure
  */
 esp_err_t wifi_provisioning_clear_config(void);
 

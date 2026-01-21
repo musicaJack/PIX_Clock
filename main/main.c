@@ -30,53 +30,53 @@
 #include <stdint.h>
 #include <time.h>
 
-// ESP32-C3 引脚定义
-// DS3231 和 SSD1306 共用 I2C 引脚
+// ESP32-C3 pin definitions
+// DS3231 and SSD1306 share I2C pins
 #define DS3231_SDA_PIN     GPIO_NUM_0
 #define DS3231_SCL_PIN     GPIO_NUM_1
 
-// SSD1306 I2C地址（常见为0x3C，如果不行可以尝试0x3D）
+// SSD1306 I2C address (common is 0x3C, try 0x3D if it doesn't work)
 #define SSD1306_I2C_ADDR   SSD1306_I2C_ADDR_0  // 0x3C
 
-// WiFi配置
+// WiFi configuration
 #define WIFI_MAX_RETRY      5
-#define WIFI_CONNECT_TIMEOUT_MS  15000  // WiFi连接超时时间：15秒
+#define WIFI_CONNECT_TIMEOUT_MS  15000  // WiFi connection timeout: 15 seconds
 
-// NTP配置（北京时间，UTC+8）
+// NTP configuration (Beijing time, UTC+8)
 #define NTP_SERVER1         "cn.pool.ntp.org"
 #define NTP_SERVER2         "time.windows.com"
 #define NTP_SERVER3         "pool.ntp.org"
-#define TIMEZONE_OFFSET     8  // 北京时间 UTC+8
+#define TIMEZONE_OFFSET     8  // Beijing time UTC+8
 
-// NVS配置
-// 注意：使用独立的命名空间 "time_sync"，与 WiFi 配网模块的 "wifi_config" 命名空间隔离
+// NVS configuration
+// Note: Use independent namespace "time_sync", isolated from WiFi provisioning module's "wifi_config" namespace
 #define NVS_NAMESPACE        "time_sync"
 #define NVS_KEY_LAST_SYNC    "last_sync"
-#define SYNC_INTERVAL_HOURS  720  // 720小时内同步过则跳过NTP
+#define SYNC_INTERVAL_HOURS  720  // Skip NTP sync if synced within 720 hours
 
 static const char *TAG = "main";
 
-// 全局变量
-static ssd1306_t ssd1306 = {0};  // 初始化为0，确保i2c_dev为NULL
+// Global variables
+static ssd1306_t ssd1306 = {0};  // Initialize to 0, ensure i2c_dev is NULL
 static ds3231_t ds3231;
 static i2c_master_bus_handle_t i2c_bus = NULL;
 static int s_retry_num = 0;
 static bool sntp_synced = false;
 static bool ntp_initialized = false;
 static bool s_in_provisioning_mode = false;
-static bool s_need_wifi_scan = false;  // 标记是否需要扫描 WiFi
-static bool s_need_enter_provisioning = false;  // 标记是否需要进入配网模式
-static bool s_need_ntp_sync = false;  // 标记是否需要同步NTP（全局变量，供主循环使用）
-static bool s_force_ntp_sync = false;  // 标记是否需要强制NTP同步（忽略720小时限制）
+static bool s_need_wifi_scan = false;  // Flag to indicate if WiFi scan is needed
+static bool s_need_enter_provisioning = false;  // Flag to indicate if provisioning mode is needed
+static bool s_need_ntp_sync = false;  // Flag to indicate if NTP sync is needed (global variable for main loop)
+static bool s_force_ntp_sync = false;  // Flag to indicate if forced NTP sync is needed (ignore 720-hour limit)
 
-// 时间结构
+// Time structure
 typedef struct {
     int hour;
     int minute;
     int second;
 } Time_t;
 
-// 从DS3231读取时间并转换为Time结构
+// Read time from DS3231 and convert to Time structure
 bool readTimeFromDS3231(Time_t *time) {
     if (!time) return false;
     
@@ -90,22 +90,22 @@ bool readTimeFromDS3231(Time_t *time) {
     return false;
 }
 
-// 将Time结构转换为ds3231_time_t并写入DS3231（只更新时间部分，保留日期）
+// Convert Time structure to ds3231_time_t and write to DS3231 (only update time part, preserve date)
 bool writeTimeToDS3231(const Time_t *time) {
     if (!time) return false;
     
-    // 先读取当前完整时间（包括日期）
+    // First read current complete time (including date)
     ds3231_time_t ds3231_time;
     if (!ds3231_read_time(&ds3231, &ds3231_time)) {
         return false;
     }
     
-    // 更新时间部分
+    // Update time part
     ds3231_time.hours = time->hour;
     ds3231_time.minutes = time->minute;
     ds3231_time.seconds = time->second;
     
-    // 写入DS3231
+    // Write to DS3231
     return ds3231_write_time(&ds3231, &ds3231_time);
 }
 
@@ -113,24 +113,24 @@ bool writeTimeToDS3231(const Time_t *time) {
 void displayTime(const Time_t *time) {
     if (!time) return;
     
-    // 只有在SSD1306初始化成功时才显示
+    // Only display if SSD1306 is initialized successfully
     if (ssd1306.i2c_dev == NULL) {
         return;
     }
     
-    // 根据时间段自动调整亮度
-    // 晚上（18:00-23:59）：亮度75%（0xCF * 0.75 ≈ 0x9B）
-    // 白天（06:00-17:59）：亮度100%（0xCF）
-    // 夜间（00:00-05:59）：亮度75%（0xCF * 0.75 ≈ 0x9B）
+    // Automatically adjust brightness based on time period
+    // Night (18:00-23:59): 75% brightness (0xCF * 0.75 ≈ 0x9B)
+    // Daytime (06:00-17:59): 100% brightness (0xCF)
+    // Night (00:00-05:59): 75% brightness (0xCF * 0.75 ≈ 0x9B)
     static uint8_t last_brightness = 0;
     uint8_t target_brightness;
     if (time->hour >= 18 || time->hour < 6) {
-        target_brightness = 0x9B;  // 75%亮度（0xCF * 0.75 ≈ 0x9B）
+        target_brightness = 0x9B;  // 75% brightness (0xCF * 0.75 ≈ 0x9B)
     } else {
-        target_brightness = 0xCF;  // 100%亮度（原始值）
+        target_brightness = 0xCF;  // 100% brightness (original value)
     }
     
-    // 只在亮度需要改变时更新
+    // Only update when brightness needs to change
     if (last_brightness != target_brightness) {
         ssd1306_set_contrast(&ssd1306, target_brightness);
         last_brightness = target_brightness;
@@ -138,29 +138,29 @@ void displayTime(const Time_t *time) {
                  time->hour >= 18 || time->hour < 6 ? 75 : 100, target_brightness, time->hour);
     }
     
-    // 像素位移防烧屏：每5分钟轻微移动显示位置
-    // 使用分钟数计算位移，循环移动：0->1->2->1->0->-1->-2->-1->0...
+    // Pixel shift to prevent burn-in: slightly move display position every 5 minutes
+    // Use minute value to calculate offset, cycle movement: 0->1->2->1->0->-1->-2->-1->0...
     static int8_t last_offset_x = 0;
     static int8_t last_offset_y = 0;
     static int last_cycle = -1;
     int8_t offset_x = 0;
     int8_t offset_y = 0;
-    int cycle = (time->minute / 5) % 8;  // 每5分钟一个周期，8个位置循环
+    int cycle = (time->minute / 5) % 8;  // One cycle every 5 minutes, 8 positions cycle
     switch (cycle) {
-        case 0: offset_x = 0;  offset_y = 0;  break;   // 中心
-        case 1: offset_x = 1;  offset_y = 0;  break;   // 右
-        case 2: offset_x = 1;  offset_y = 1;  break;   // 右下
-        case 3: offset_x = 0;  offset_y = 1;  break;   // 下
-        case 4: offset_x = -1; offset_y = 1;  break;   // 左下
-        case 5: offset_x = -1; offset_y = 0;  break;   // 左
-        case 6: offset_x = -1; offset_y = -1; break;   // 左上
-        case 7: offset_x = 0;  offset_y = -1; break;   // 上
+        case 0: offset_x = 0;  offset_y = 0;  break;   // Center
+        case 1: offset_x = 1;  offset_y = 0;  break;   // Right
+        case 2: offset_x = 1;  offset_y = 1;  break;   // Bottom-right
+        case 3: offset_x = 0;  offset_y = 1;  break;   // Bottom
+        case 4: offset_x = -1; offset_y = 1;  break;   // Bottom-left
+        case 5: offset_x = -1; offset_y = 0;  break;   // Left
+        case 6: offset_x = -1; offset_y = -1; break;   // Top-left
+        case 7: offset_x = 0;  offset_y = -1; break;   // Top
         default: offset_x = 0; offset_y = 0; break;
     }
     
-    // 当像素位移改变时输出日志（每5分钟改变一次）
+    // Output log when pixel shift changes (changes every 5 minutes)
     if (cycle != last_cycle || offset_x != last_offset_x || offset_y != last_offset_y) {
-        const char* position_names[] = {"中心", "右", "右下", "下", "左下", "左", "左上", "上"};
+        const char* position_names[] = {"Center", "Right", "Bottom-right", "Bottom", "Bottom-left", "Left", "Top-left", "Top"};
         ESP_LOGI(TAG, "Pixel shift changed: cycle=%d, offset=(%d, %d), position=%s", 
                  cycle, offset_x, offset_y, position_names[cycle]);
         last_offset_x = offset_x;
@@ -168,10 +168,10 @@ void displayTime(const Time_t *time) {
         last_cycle = cycle;
     }
     
-    // 读取完整的DS3231时间（包括日期）
+    // Read complete DS3231 time (including date)
     ds3231_time_t ds3231_time;
     if (!ds3231_read_time(&ds3231, &ds3231_time)) {
-        // 如果读取失败，只显示时间（冒号闪烁）
+        // If read fails, only display time (colon blinking)
         char timeStr[6];
         if (time->second % 2 == 0) {
             snprintf(timeStr, sizeof(timeStr), "%02d:%02d", 
@@ -184,37 +184,37 @@ void displayTime(const Time_t *time) {
         return;
     }
     
-    // 格式化时间字符串（只显示HH:MM，不显示秒）
-    // 冒号根据秒数奇偶性闪烁：偶数秒显示冒号，奇数秒显示空格
+    // Format time string (only display HH:MM, not seconds)
+    // Colon blinks based on second parity: even seconds show colon, odd seconds show space
     char timeStr[6];
     if (time->second % 2 == 0) {
-        // 偶数秒：显示冒号
+        // Even seconds: show colon
         snprintf(timeStr, sizeof(timeStr), "%02d:%02d", 
                  time->hour, time->minute);
     } else {
-        // 奇数秒：冒号位置显示空格（实现闪烁效果）
+        // Odd seconds: show space at colon position (to achieve blinking effect)
         snprintf(timeStr, sizeof(timeStr), "%02d %02d", 
                  time->hour, time->minute);
     }
     
-    // 格式化日期字符串
+    // Format date string
     char dateStr[16];
     snprintf(dateStr, sizeof(dateStr), "%04d-%02d-%02d", 
              2000 + ds3231_time.year, ds3231_time.month, ds3231_time.date);
     
-    // 格式化星期字符串（DS3231的day: 1=Sunday, 2=Monday, ..., 7=Saturday）
+    // Format weekday string (DS3231 day: 1=Sunday, 2=Monday, ..., 7=Saturday)
     const char* weekdays[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
     const char* weekdayStr = (ds3231_time.day >= 1 && ds3231_time.day <= 7) ? 
                              weekdays[ds3231_time.day - 1] : "---";
     
-    // 读取温度
+    // Read temperature
     float temperature = 0.0f;
     char tempStr[12] = "---c";
     if (ds3231_read_temperature(&ds3231, &temperature)) {
         snprintf(tempStr, sizeof(tempStr), "%.1fc", temperature);
     }
     
-    // 显示完整时钟界面（带像素位移）
+    // Display complete clock interface (with pixel shift)
     ssd1306_show_clock(&ssd1306, timeStr, dateStr, weekdayStr, tempStr, offset_x, offset_y);
 }
 
@@ -235,7 +235,7 @@ bool parseTimeString(const char *str, Time_t *time) {
     return false;
 }
 
-// NVS: 保存上次同步时间戳
+// NVS: Save last sync timestamp
 static void save_last_sync_time(time_t sync_time)
 {
     nvs_handle_t nvs_handle;
@@ -256,7 +256,7 @@ static void save_last_sync_time(time_t sync_time)
     nvs_close(nvs_handle);
 }
 
-// NVS: 读取上次同步时间戳
+// NVS: Read last sync timestamp
 static time_t get_last_sync_time(void)
 {
     nvs_handle_t nvs_handle;
@@ -279,11 +279,11 @@ static time_t get_last_sync_time(void)
     return (time_t)last_sync;
 }
 
-// 检查是否需要同步NTP（720小时内同步过则返回false）
+// Check if NTP sync is needed (returns false if synced within 720 hours)
 static bool should_sync_ntp(void)
 {
-    // 如果强制同步标志被设置，直接返回true（忽略720小时限制）
-    // 使用静态变量避免重复输出日志
+    // If force sync flag is set, return true directly (ignore 720-hour limit)
+    // Use static variable to avoid duplicate log output
     static bool force_sync_logged = false;
     if (s_force_ntp_sync) {
         if (!force_sync_logged) {
@@ -292,7 +292,7 @@ static bool should_sync_ntp(void)
         }
         return true;
     } else {
-        // 如果强制同步标志被清除，重置日志标志
+        // If force sync flag is cleared, reset log flag
         force_sync_logged = false;
     }
     
@@ -302,13 +302,13 @@ static bool should_sync_ntp(void)
         return true;
     }
     
-    // 尝试使用系统时间，如果不可用则使用DS3231时间
+    // Try to use system time, if unavailable use DS3231 time
     time_t now = time(NULL);
     if (now <= 0) {
-        // 系统时间不可用，尝试从DS3231获取时间
+        // System time unavailable, try to get time from DS3231
         ds3231_time_t ds3231_time;
         if (ds3231_read_time(&ds3231, &ds3231_time)) {
-            // 将DS3231时间转换为time_t（简化计算，仅用于判断时间差）
+            // Convert DS3231 time to time_t (simplified calculation, only for time difference judgment)
             struct tm tm_time = {0};
             tm_time.tm_sec = ds3231_time.seconds;
             tm_time.tm_min = ds3231_time.minutes;
@@ -330,7 +330,7 @@ static bool should_sync_ntp(void)
         }
     }
     
-    // 计算时间差（秒）
+    // Calculate time difference (seconds)
     time_t diff = now - last_sync;
     time_t interval_seconds = SYNC_INTERVAL_HOURS * 3600;
     
@@ -345,16 +345,16 @@ static bool should_sync_ntp(void)
     return false;
 }
 
-// WiFi 连接状态回调
+// WiFi connection status callback
 static void wifi_status_callback(bool connected, const char* ip)
 {
     if (connected) {
-        // 注意：wifi_provisioning.c 中已经输出了 "Got IP" 日志
-        // 这里只输出一次连接成功日志，避免重复
+        // Note: wifi_provisioning.c has already output "Got IP" log
+        // Only output connection success log once here to avoid duplication
         ESP_LOGI(TAG, "WiFi connected successfully! IP: %s", ip ? ip : "unknown");
         s_retry_num = 0;
         
-        // 如果之前在配网模式，现在连接成功，停止配网模式
+        // If previously in provisioning mode, now connection successful, stop provisioning mode
         if (s_in_provisioning_mode) {
             ESP_LOGI(TAG, "Stopping provisioning mode");
             wifi_provisioning_stop_softap();
@@ -365,25 +365,25 @@ static void wifi_status_callback(bool connected, const char* ip)
     }
 }
 
-// WiFi事件处理（用于重试逻辑和状态回调）
-// 注意：WIFI_EVENT_STA_START 事件已在 wifi_provisioning.c 中处理，这里不再重复处理
+// WiFi event handler (for retry logic and status callback)
+// Note: WIFI_EVENT_STA_START event has been handled in wifi_provisioning.c, not repeated here
 static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                               int32_t event_id, void* event_data)
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t* event = (wifi_event_sta_disconnected_t*) event_data;
-        // 简化日志输出，避免栈溢出
+        // Simplify log output to avoid stack overflow
         ESP_LOGW(TAG, "WiFi disconnected, reason: %d", event->reason);
         
-        // 如果是 "No AP found" 错误，标记需要扫描（在主循环中执行，避免栈溢出）
+        // If "No AP found" error, mark need for scan (execute in main loop to avoid stack overflow)
         if (event->reason == WIFI_REASON_NO_AP_FOUND && s_retry_num == 0) {
             s_need_wifi_scan = true;
         }
         
         if (s_retry_num < WIFI_MAX_RETRY) {
-            // 注意：在事件处理函数中使用 vTaskDelay 会阻塞事件循环
-            // 但这是必要的，因为我们需要延迟重试
-            // 等待15秒后重试连接
+            // Note: Using vTaskDelay in event handler will block event loop
+            // But this is necessary because we need delayed retry
+            // Wait 15 seconds before retry connection
             ESP_LOGI(TAG, "Waiting %d seconds before retry (%d/%d)...", 
                      WIFI_CONNECT_TIMEOUT_MS / 1000, s_retry_num + 1, WIFI_MAX_RETRY);
             vTaskDelay(pdMS_TO_TICKS(WIFI_CONNECT_TIMEOUT_MS));
@@ -396,26 +396,26 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
         } else {
             ESP_LOGE(TAG, "Failed to connect after %d retries", WIFI_MAX_RETRY);
             ESP_LOGI(TAG, "All connection attempts failed. Will enter provisioning mode.");
-            // 标记需要进入配网模式（在主循环中处理，避免在事件处理函数中执行复杂操作）
+            // Mark need to enter provisioning mode (handle in main loop to avoid complex operations in event handler)
             s_need_enter_provisioning = true;
             wifi_status_callback(false, NULL);
         }
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        // 注意：wifi_provisioning.c 中已经处理了 IP_EVENT_STA_GOT_IP 并调用了回调
-        // 这里不再重复调用，避免重复日志
-        // wifi_provisioning.c 中的回调已经足够
+        // Note: wifi_provisioning.c has already handled IP_EVENT_STA_GOT_IP and called callback
+        // Not repeated here to avoid duplicate logs
+        // Callback in wifi_provisioning.c is sufficient
     }
 }
 
-// 执行 WiFi 扫描（独立函数，避免栈溢出）
+// Perform WiFi scan (independent function to avoid stack overflow)
 static void perform_wifi_scan(void)
 {
     ESP_LOGI(TAG, "Scanning for available WiFi networks...");
     wifi_scan_config_t scan_config = {
-        .ssid = NULL,  // 扫描所有网络
+        .ssid = NULL,  // Scan all networks
         .bssid = NULL,
         .channel = 0,
-        .show_hidden = true,  // 包括隐藏的 SSID
+        .show_hidden = true,  // Include hidden SSID
         .scan_type = WIFI_SCAN_TYPE_ACTIVE,
         .scan_time = {
             .active = {
@@ -425,19 +425,19 @@ static void perform_wifi_scan(void)
         }
     };
     
-    esp_err_t ret = esp_wifi_scan_start(&scan_config, true);  // 阻塞扫描
+    esp_err_t ret = esp_wifi_scan_start(&scan_config, true);  // Blocking scan
     if (ret == ESP_OK) {
         uint16_t ap_count = 0;
         esp_wifi_scan_get_ap_num(&ap_count);
         ESP_LOGI(TAG, "Found %d WiFi networks:", ap_count);
         
         if (ap_count > 0) {
-            // 减少数组大小，避免栈溢出（最多显示10个）
+            // Reduce array size to avoid stack overflow (display at most 10)
             wifi_ap_record_t ap_records[10];
             uint16_t ap_records_count = ap_count > 10 ? 10 : ap_count;
             esp_wifi_scan_get_ap_records(&ap_records_count, ap_records);
             
-            // 读取配置的 SSID
+            // Read configured SSID
             wifi_config_data_t wifi_config_data;
             const char* target_ssid = NULL;
             if (wifi_provisioning_load_config(&wifi_config_data) == ESP_OK) {
@@ -468,10 +468,10 @@ static void perform_wifi_scan(void)
     }
 }
 
-// 初始化WiFi Station模式
+// Initialize WiFi Station mode
 static esp_err_t wifi_init_sta(void)
 {
-    // 从 NVS 读取 WiFi 配置
+    // Read WiFi configuration from NVS
     wifi_config_data_t wifi_config_data;
     esp_err_t ret = wifi_provisioning_load_config(&wifi_config_data);
     if (ret != ESP_OK) {
@@ -482,7 +482,7 @@ static esp_err_t wifi_init_sta(void)
     ESP_LOGI(TAG, "Initializing WiFi Station mode...");
     ESP_LOGI(TAG, "Connecting to SSID: %s", wifi_config_data.ssid);
     
-    // 启动 WiFi Station
+    // Start WiFi Station
     ret = wifi_provisioning_start_sta(&wifi_config_data, wifi_status_callback);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start WiFi Station: %s", esp_err_to_name(ret));
@@ -492,21 +492,21 @@ static esp_err_t wifi_init_sta(void)
     return ESP_OK;
 }
 
-// 关闭WiFi模块以节省功耗（已废弃，使用 wifi_provisioning_stop_softap 代替）
+// Close WiFi module to save power (deprecated, use wifi_provisioning_stop_softap instead)
 static void wifi_deinit_sta(void)
 {
     ESP_LOGI(TAG, "Deinitializing WiFi to save power...");
     wifi_provisioning_stop_softap();
 }
 
-// 检查并同步NTP时间到DS3231
+// Check and sync NTP time to DS3231
 static void sync_ntp_to_ds3231(void)
 {
     if (sntp_synced) {
-        return;  // 已经同步过了
+        return;  // Already synced
     }
     
-    // 检查SNTP是否已同步
+    // Check if SNTP is synchronized
     time_t now = 0;
     struct tm timeinfo = {0};
     time(&now);
@@ -514,39 +514,39 @@ static void sync_ntp_to_ds3231(void)
     if (now > 0) {
         localtime_r(&now, &timeinfo);
         
-        // 检查时间是否合理（年份应该在2020-2099之间）
+        // Check if time is reasonable (year should be between 2020-2099)
         if (timeinfo.tm_year >= 120 && timeinfo.tm_year < 200) {
             ESP_LOGI(TAG, "SNTP time synchronized!");
             sntp_synced = true;
             
-            // 如果是强制同步，清除标志
+            // If force sync, clear flag
             if (s_force_ntp_sync) {
                 ESP_LOGI(TAG, "Force NTP sync completed successfully");
                 s_force_ntp_sync = false;
-                // 注意：force_sync_logged 会在下次 should_sync_ntp() 调用时自动重置
+                // Note: force_sync_logged will be automatically reset on next should_sync_ntp() call
             }
             
-            // 将NTP时间同步到DS3231
+            // Sync NTP time to DS3231
             ds3231_time_t ds3231_time;
             ds3231_time.seconds = timeinfo.tm_sec;
             ds3231_time.minutes = timeinfo.tm_min;
             ds3231_time.hours = timeinfo.tm_hour;
-            ds3231_time.day = timeinfo.tm_wday == 0 ? 7 : timeinfo.tm_wday;  // 转换为1-7（周日=7）
+            ds3231_time.day = timeinfo.tm_wday == 0 ? 7 : timeinfo.tm_wday;  // Convert to 1-7 (Sunday=7)
             ds3231_time.date = timeinfo.tm_mday;
-            ds3231_time.month = timeinfo.tm_mon + 1;  // tm_mon是0-11
-            ds3231_time.year = timeinfo.tm_year - 100;  // tm_year是1900年起的年数，转换为0-99
+            ds3231_time.month = timeinfo.tm_mon + 1;  // tm_mon is 0-11
+            ds3231_time.year = timeinfo.tm_year - 100;  // tm_year is years since 1900, convert to 0-99
             
             if (ds3231_write_time(&ds3231, &ds3231_time)) {
                 ESP_LOGI(TAG, "Time synchronized to DS3231: %04d-%02d-%02d %02d:%02d:%02d",
                          2000 + ds3231_time.year, ds3231_time.month, ds3231_time.date,
                          ds3231_time.hours, ds3231_time.minutes, ds3231_time.seconds);
                 
-                // 保存同步时间戳到NVS
+                // Save sync timestamp to NVS
                 save_last_sync_time(now);
                 
-                // 同步完成后关闭WiFi以节省功耗
+                // Close WiFi after sync completes to save power
                 wifi_deinit_sta();
-                ntp_initialized = false;  // 标记不再需要检查NTP同步
+                ntp_initialized = false;  // Mark no longer need to check NTP sync
             } else {
                 ESP_LOGE(TAG, "Failed to write time to DS3231");
             }
@@ -554,23 +554,23 @@ static void sync_ntp_to_ds3231(void)
     }
 }
 
-// 初始化SNTP
+// Initialize SNTP
 static void sntp_init_func(void)
 {
     ESP_LOGI(TAG, "Initializing SNTP...");
     sntp_setoperatingmode(SNTP_OPMODE_POLL);
     
-    // 设置NTP服务器（北京时间）
+    // Set NTP servers (Beijing time)
     sntp_setservername(0, NTP_SERVER1);
     sntp_setservername(1, NTP_SERVER2);
     sntp_setservername(2, NTP_SERVER3);
     
-    // 设置时区（北京时间 UTC+8）
-    // 注意：时区已在 app_main() 开始时设置，这里再次设置以确保正确性
+    // Set timezone (Beijing time UTC+8)
+    // Note: Timezone has been set at the beginning of app_main(), set again here to ensure correctness
     setenv("TZ", "CST-8", 1);
     tzset();
     
-    // 启动SNTP
+    // Start SNTP
     sntp_init();
     
     ESP_LOGI(TAG, "SNTP initialized. Waiting for time sync...");
@@ -580,22 +580,22 @@ void app_main(void)
 {
     ESP_LOGI(TAG, "=== NTP Timer with DS3231 and SSD1306 ===");
     
-    // 初始化NVS（用于存储同步时间戳）
+    // Initialize NVS (for storing sync timestamp)
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        // NVS分区被占用或版本不匹配，擦除并重新初始化
+        // NVS partition occupied or version mismatch, erase and reinitialize
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
     
-    // 设置时区（北京时间 UTC+8）- 必须在调用 should_sync_ntp() 之前设置
-    // 这样 mktime() 才能正确将 DS3231 的本地时间转换为 UTC 时间戳
+    // Set timezone (Beijing time UTC+8) - must be set before calling should_sync_ntp()
+    // This way mktime() can correctly convert DS3231 local time to UTC timestamp
     setenv("TZ", "CST-8", 1);
     tzset();
     ESP_LOGI(TAG, "Timezone set to CST-8 (UTC+8)");
     
-    // 初始化I2C总线（DS3231和SSD1306共用）
+    // Initialize I2C bus (DS3231 and SSD1306 share)
     ESP_LOGI(TAG, "Initializing I2C bus...");
     i2c_master_bus_config_t i2c_bus_config = {
         .i2c_port = I2C_NUM_0,
@@ -614,7 +614,7 @@ void app_main(void)
         return;
     }
     
-    // 初始化DS3231
+    // Initialize DS3231
     ESP_LOGI(TAG, "Initializing DS3231 RTC...");
     if (!ds3231_init(&ds3231, i2c_bus, DS3231_SDA_PIN, DS3231_SCL_PIN)) {
         ESP_LOGE(TAG, "Failed to initialize DS3231!");
@@ -622,7 +622,7 @@ void app_main(void)
     } else {
         ESP_LOGI(TAG, "DS3231 initialized successfully");
         
-        // 检查振荡器状态
+        // Check oscillator status
         bool oscillator_stopped = false;
         if (ds3231_is_oscillator_stopped(&ds3231, &oscillator_stopped)) {
             if (oscillator_stopped) {
@@ -631,9 +631,9 @@ void app_main(void)
         }
     }
     
-    // 初始化SSD1306显示模块（与DS3231共用I2C总线）
+    // Initialize SSD1306 display module (shares I2C bus with DS3231)
     ESP_LOGI(TAG, "Initializing SSD1306 display...");
-    // 尝试两个常见的I2C地址
+    // Try two common I2C addresses
     bool ssd1306_ok = false;
     if (ssd1306_init(&ssd1306, i2c_bus, SSD1306_I2C_ADDR_0)) {
         ESP_LOGI(TAG, "SSD1306 initialized successfully at address 0x%02X", SSD1306_I2C_ADDR_0);
@@ -641,7 +641,7 @@ void app_main(void)
     } else {
         ESP_LOGW(TAG, "Failed to initialize SSD1306 at address 0x%02X, trying 0x%02X...", 
                  SSD1306_I2C_ADDR_0, SSD1306_I2C_ADDR_1);
-        // 如果第一个地址失败，尝试第二个地址
+        // If first address fails, try second address
         if (ssd1306_init(&ssd1306, i2c_bus, SSD1306_I2C_ADDR_1)) {
             ESP_LOGI(TAG, "SSD1306 initialized successfully at address 0x%02X", SSD1306_I2C_ADDR_1);
             ssd1306_ok = true;
@@ -654,8 +654,8 @@ void app_main(void)
         }
     }
     
-    // 从DS3231读取时间并显示
-    Time_t currentTime = {15, 29, 15};  // 默认时间
+    // Read time from DS3231 and display
+    Time_t currentTime = {15, 29, 15};  // Default time
     if (readTimeFromDS3231(&currentTime)) {
         ESP_LOGI(TAG, "Time read from DS3231: %02d:%02d:%02d", 
                currentTime.hour, currentTime.minute, currentTime.second);
@@ -664,14 +664,14 @@ void app_main(void)
                 currentTime.hour, currentTime.minute, currentTime.second);
     }
     
-    // 显示初始时间
+    // Display initial time
     displayTime(&currentTime);
     
-    // 初始化 WiFi 配网模块（内部已注册事件处理器）
+    // Initialize WiFi provisioning module (event handlers registered internally)
     ESP_LOGI(TAG, "Initializing WiFi provisioning module...");
     ESP_ERROR_CHECK(wifi_provisioning_init());
     
-    // 注册额外的 WiFi 事件处理器（用于 Station 模式连接状态和重试逻辑）
+    // Register additional WiFi event handlers (for Station mode connection status and retry logic)
     esp_event_handler_instance_t instance_any_id;
     esp_event_handler_instance_t instance_got_ip;
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
@@ -685,24 +685,24 @@ void app_main(void)
                                                         NULL,
                                                         &instance_got_ip));
     
-    // 优先检查是否有保存的 WiFi 配置
-    // 如果没有配置，直接进入配网模式
+    // First check if there is saved WiFi configuration
+    // If no configuration, directly enter provisioning mode
     ESP_LOGI(TAG, "Checking for saved WiFi config in NVS...");
     bool has_wifi_config = wifi_provisioning_has_config();
     
     if (!has_wifi_config) {
-        // 没有WiFi配置，自动启动 SoftAP 配网模式
+        // No WiFi config, automatically start SoftAP provisioning mode
         ESP_LOGI(TAG, "No WiFi config found in NVS. Automatically entering provisioning mode...");
         ESP_LOGI(TAG, "Please connect to WiFi hotspot 'PIX_Clock_Setup' and open http://192.168.4.1");
         s_in_provisioning_mode = true;
         ESP_ERROR_CHECK(wifi_provisioning_start_softap(wifi_status_callback));
     } else {
-        // 有WiFi配置，检查是否需要同步NTP（决定是否需要启动WiFi）
+        // WiFi config exists, check if NTP sync is needed (determines if WiFi needs to be started)
         s_need_ntp_sync = should_sync_ntp();
         ESP_LOGI(TAG, "WiFi config found. NTP sync check: %s", s_need_ntp_sync ? "needed" : "not needed");
         
         if (s_need_ntp_sync) {
-        // 有配置且需要NTP同步，启动WiFi连接
+        // Config exists and NTP sync needed, start WiFi connection
         ESP_LOGI(TAG, "WiFi config found. NTP sync needed. Connecting to WiFi...");
         esp_err_t ret = wifi_init_sta();
             if (ret != ESP_OK) {
@@ -710,14 +710,14 @@ void app_main(void)
                 s_in_provisioning_mode = true;
                 ESP_ERROR_CHECK(wifi_provisioning_start_softap(wifi_status_callback));
             } else {
-                // WiFi启动成功，等待连接后初始化SNTP
+                // WiFi started successfully, wait for connection then initialize SNTP
                 ESP_LOGI(TAG, "NTP sync needed. Waiting for WiFi connection...");
                 esp_netif_t *sta_netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
                 esp_netif_ip_info_t ip_info;
                 int retry_count = 0;
                 bool wifi_connected = false;
                 
-                while (retry_count < 30) {  // 最多等待30秒
+                while (retry_count < 30) {  // Wait at most 30 seconds
                     vTaskDelay(pdMS_TO_TICKS(1000));
                     retry_count++;
                     if (sta_netif && esp_netif_get_ip_info(sta_netif, &ip_info) == ESP_OK) {
@@ -731,24 +731,24 @@ void app_main(void)
                 
                 if (!wifi_connected) {
                     ESP_LOGW(TAG, "WiFi connection failed after 30 seconds. Entering provisioning mode.");
-                    // WiFi连接失败，进入配网模式
-                    wifi_provisioning_stop_softap();  // 先停止Station模式
-                    vTaskDelay(pdMS_TO_TICKS(500));  // 等待WiFi完全停止
-                    s_retry_num = 0;  // 重置重试计数
-                    s_need_enter_provisioning = true;  // 标记需要进入配网模式
+                    // WiFi connection failed, enter provisioning mode
+                    wifi_provisioning_stop_softap();  // First stop Station mode
+                    vTaskDelay(pdMS_TO_TICKS(500));  // Wait for WiFi to completely stop
+                    s_retry_num = 0;  // Reset retry count
+                    s_need_enter_provisioning = true;  // Mark need to enter provisioning mode
                     ntp_initialized = false;
                 } else {
-                    // WiFi连接成功，初始化SNTP
+                    // WiFi connection successful, initialize SNTP
                     sntp_init_func();
                     ntp_initialized = true;
                 }
             }
         } else {
-            // 有配置但不需要NTP同步，不启动WiFi以节省功耗
+            // Config exists but NTP sync not needed, don't start WiFi to save power
             ESP_LOGI(TAG, "WiFi config found but NTP sync not needed (last sync was within %d hours).", SYNC_INTERVAL_HOURS);
             ESP_LOGI(TAG, "Skipping WiFi initialization to save power. Using DS3231 time directly.");
             ntp_initialized = false;
-            // 不启动WiFi，直接使用DS3231时间
+            // Don't start WiFi, use DS3231 time directly
         }
     }
     
@@ -762,43 +762,43 @@ void app_main(void)
     // Main loop: read time from DS3231 every second
     TickType_t lastUpdate = xTaskGetTickCount();
     TickType_t lastNtpCheck = xTaskGetTickCount();
-    TickType_t lastProvCheck = xTaskGetTickCount();  // 配网模式检查
-    TickType_t ntpSyncStartTime = xTaskGetTickCount();  // 记录NTP同步开始时间
+    TickType_t lastProvCheck = xTaskGetTickCount();  // Provisioning mode check
+    TickType_t ntpSyncStartTime = xTaskGetTickCount();  // Record NTP sync start time
     const TickType_t updateIntervalMs = pdMS_TO_TICKS(1000);  // 1 second
-    const TickType_t ntpCheckIntervalMs = pdMS_TO_TICKS(5000);  // 每5秒检查一次NTP同步
-    const TickType_t provCheckIntervalMs = pdMS_TO_TICKS(2000);  // 每2秒检查一次配网状态
-    const TickType_t ntpSyncTimeoutMs = pdMS_TO_TICKS(60000);  // NTP同步超时时间：60秒
+    const TickType_t ntpCheckIntervalMs = pdMS_TO_TICKS(5000);  // Check NTP sync every 5 seconds
+    const TickType_t provCheckIntervalMs = pdMS_TO_TICKS(2000);  // Check provisioning status every 2 seconds
+    const TickType_t ntpSyncTimeoutMs = pdMS_TO_TICKS(60000);  // NTP sync timeout: 60 seconds
     
     while (1) {
         TickType_t now = xTaskGetTickCount();
         
-        // 如果需要扫描 WiFi（在主循环中执行，避免事件处理函数栈溢出）
+        // If WiFi scan is needed (execute in main loop to avoid stack overflow in event handler)
         if (s_need_wifi_scan) {
             s_need_wifi_scan = false;
-            // 将扫描操作移到独立函数，避免在主循环中使用大数组
+            // Move scan operation to independent function to avoid using large arrays in main loop
             perform_wifi_scan();
         }
         
-        // 如果5次重试都失败，进入配网模式
+        // If all 5 retries fail, enter provisioning mode
         if (s_need_enter_provisioning) {
             s_need_enter_provisioning = false;
             ESP_LOGI(TAG, "Entering provisioning mode due to connection failure...");
             
-            // 停止当前的 WiFi（无论是 Station 还是 SoftAP 模式）
+            // Stop current WiFi (whether Station or SoftAP mode)
             esp_err_t ret = esp_wifi_stop();
             if (ret != ESP_OK) {
                 ESP_LOGW(TAG, "Failed to stop WiFi: %s", esp_err_to_name(ret));
             }
-            vTaskDelay(pdMS_TO_TICKS(500));  // 等待 WiFi 完全停止
+            vTaskDelay(pdMS_TO_TICKS(500));  // Wait for WiFi to completely stop
             
-            // 清除旧的无效配置，避免配网模式启动后立即检测到旧配置
+            // Clear old invalid config to avoid detecting old config immediately after provisioning mode starts
             ESP_LOGI(TAG, "Clearing invalid WiFi config...");
             wifi_provisioning_clear_config();
             
-            // 重置重试计数
+            // Reset retry count
             s_retry_num = 0;
             
-            // 启动 SoftAP 配网模式
+            // Start SoftAP provisioning mode
             s_in_provisioning_mode = true;
             ret = wifi_provisioning_start_softap(wifi_status_callback);
             if (ret != ESP_OK) {
@@ -808,30 +808,30 @@ void app_main(void)
             }
         }
         
-        // 在配网模式下，定期检查是否有新配置保存
+        // In provisioning mode, periodically check if new config is saved
         if (s_in_provisioning_mode && (now - lastProvCheck) >= provCheckIntervalMs) {
             lastProvCheck = now;
             if (wifi_provisioning_has_config()) {
-                // 检测到新配置，停止配网模式并连接 WiFi
+                // New config detected, stop provisioning mode and connect WiFi
                 ESP_LOGI(TAG, "WiFi config detected, stopping provisioning and connecting...");
                 wifi_provisioning_stop_softap();
                 s_in_provisioning_mode = false;
                 
-                // 启动 Station 模式
+                // Start Station mode
                 esp_err_t ret = wifi_init_sta();
                 if (ret == ESP_OK) {
-                    // 注意：不在这里初始化NTP，因为WiFi可能还没有连接成功
-                    // 主循环会检测到WiFi连接并初始化SNTP（见第710-722行的逻辑）
+                    // Note: Don't initialize NTP here because WiFi may not have connected successfully yet
+                    // Main loop will detect WiFi connection and initialize SNTP (see logic at lines 710-722)
                 }
             }
         }
         
-        // 定期检查NTP同步状态（每5秒，仅在NTP已初始化时）
+        // Periodically check NTP sync status (every 5 seconds, only when NTP is initialized)
         if (ntp_initialized && (now - lastNtpCheck) >= ntpCheckIntervalMs) {
             sync_ntp_to_ds3231();
             lastNtpCheck = now;
             
-            // 检查是否超时（60秒内未同步成功）
+            // Check if timeout (not synced successfully within 60 seconds)
             if (!sntp_synced && (now - ntpSyncStartTime) >= ntpSyncTimeoutMs) {
                 ESP_LOGW(TAG, "NTP sync timeout after 60 seconds. Closing WiFi to save power.");
                 wifi_provisioning_stop_softap();
@@ -839,15 +839,15 @@ void app_main(void)
             }
         }
         
-        // 如果 WiFi 已连接且需要同步 NTP，但 NTP 还未初始化，则初始化 NTP
-        // 注意：如果s_force_ntp_sync为true，需要重新检查should_sync_ntp()来更新s_need_ntp_sync
-        // 但只在WiFi已连接时才检查，避免重复调用should_sync_ntp()
+        // If WiFi is connected and NTP sync is needed but NTP is not initialized, initialize NTP
+        // Note: If s_force_ntp_sync is true, need to recheck should_sync_ntp() to update s_need_ntp_sync
+        // But only check when WiFi is connected to avoid repeated calls to should_sync_ntp()
         if (s_force_ntp_sync && !ntp_initialized) {
             esp_netif_t *sta_netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
             esp_netif_ip_info_t ip_info;
-            // 只有在WiFi已连接时才更新s_need_ntp_sync，避免重复日志
+            // Only update s_need_ntp_sync when WiFi is connected to avoid duplicate logs
             if (sta_netif && esp_netif_get_ip_info(sta_netif, &ip_info) == ESP_OK && ip_info.ip.addr != 0) {
-                s_need_ntp_sync = should_sync_ntp();  // 重新检查，此时should_sync_ntp会返回true（只输出一次日志）
+                s_need_ntp_sync = should_sync_ntp();  // Recheck, should_sync_ntp will return true at this time (only output log once)
             }
         }
         
@@ -870,9 +870,9 @@ void app_main(void)
         
         // Check if 1 second has passed
         if ((now - lastUpdate) >= updateIntervalMs) {
-            // 从DS3231读取最新时间
+            // Read latest time from DS3231
             if (!readTimeFromDS3231(&currentTime)) {
-                // 如果读取失败，使用软件计时（向后兼容）
+                // If read fails, use software timing (backward compatibility)
                 currentTime.second++;
                 if (currentTime.second >= 60) {
                     currentTime.second = 0;

@@ -18,7 +18,6 @@ A smart clock project based on ESP32-C3, using DS3231 RTC module and SSD1306 OLE
 - ✅ **WiFi Provisioning**: Supports SoftAP mode for easy WiFi configuration via web interface
 - ✅ **NTP Time Synchronization**: Automatically syncs time from network to ensure accuracy
 - ✅ **Low Power Design**: Intelligent WiFi module management, only enabled when needed
-- ✅ **Button Control**: Long press button to quickly enter provisioning mode
 
 ### Display Features
 - **Time Display**: Format `HH:MM` with blinking colon every second
@@ -38,7 +37,6 @@ A smart clock project based on ESP32-C3, using DS3231 RTC module and SSD1306 OLE
 |--------------|------------|-------------|
 | GPIO0 | SDA | I2C data line (DS3231 + SSD1306) |
 | GPIO1 | SCL | I2C clock line (DS3231 + SSD1306) |
-| GPIO3 | BUTTON | Button (long press 3 seconds to enter provisioning mode) |
 | VBUS | TP4096 Battery Input | Power input from TP4096 lithium battery charging module |
 
 ### Module Specifications
@@ -67,7 +65,6 @@ A smart clock project based on ESP32-C3, using DS3231 RTC module and SSD1306 OLE
 ESP32-C3          DS3231          SSD1306          TP4096
    GPIO0  ──────── SDA ──────────── SDA
    GPIO1  ──────── SCL ──────────── SCL
-   GPIO3  ──────── BUTTON (button)
    VBUS   ──────── Battery Input (from TP4096)
    GND    ──────── GND ──────────── GND ──────────── GND
    3.3V   ──────── VCC ──────────── VCC
@@ -130,9 +127,9 @@ idf.py flash monitor
 ### First Use (Auto Provisioning)
 
 1. After power-on, if no saved WiFi configuration exists, the device **automatically enters provisioning mode**
-2. The device creates a WiFi hotspot named `VFD_Clock_Setup`
+2. The device creates a WiFi hotspot named `PIX_Clock_Setup`
 3. Connect to the hotspot using a phone or computer
-   - **SSID**: `VFD_Clock_Setup`
+   - **SSID**: `PIX_Clock_Setup`
    - **Password**: `12345678`
 4. Open a browser and visit `http://192.168.4.1`
 5. Enter your WiFi information on the provisioning page:
@@ -141,16 +138,6 @@ idf.py flash monitor
 6. Click the "Connect" button
 7. The device automatically saves the configuration and connects to your specified WiFi network
 8. After successful connection, the device disconnects the provisioning hotspot and starts NTP time synchronization
-
-### Button Provisioning (Recommended)
-
-If you need to reconfigure WiFi or change networks:
-
-1. **Long press GPIO3 button for 3 seconds**
-2. The device immediately enters provisioning mode
-3. **Important**: Button long press will **clear old WiFi configuration** (forced reset)
-4. Follow steps 3-8 above to complete provisioning
-5. **Important**: Provisioning triggered by button will **force NTP time synchronization** after successful connection (ignoring 720-hour limit) to ensure time accuracy
 
 ### Auto Re-provisioning
 
@@ -166,7 +153,6 @@ If WiFi connection fails (all 5 retries fail), the device will:
 
 - **Default Interval**: Sync every 720 hours (30 days)
 - **Smart Detection**: If synced within 720 hours, **WiFi module will not start**, saving power
-- **Forced Sync**: Button provisioning triggers forced sync (ignoring time limit)
 - **Sync Timeout**: Close WiFi if sync fails within 60 seconds
 
 ### NTP Servers
@@ -208,23 +194,6 @@ If WiFi connection fails (all 5 retries fail), the device will:
 3. **Display Optimization**:
    - Automatically adjusts brightness based on time period
    - Reduces brightness at night to save power
-
-## 🎛️ Button Functions
-
-### GPIO3 Button
-
-- **Function**: Long press 3 seconds to enter provisioning mode
-- **Features**:
-  - Can be triggered at any time (main loop continuously detects)
-  - Clears old WiFi configuration after trigger
-  - Forces NTP synchronization after successful provisioning
-  - Responsive, no waiting required
-
-### Button Detection Mechanism
-
-- Uses GPIO interrupt to detect button state
-- Detects long press duration (3 seconds) in main loop
-- Supports both rising and falling edge triggers
 
 ## 📁 Project Structure
 
@@ -301,7 +270,7 @@ Namespace isolation ensures they don't affect each other.
 
 4. **WiFi Configuration**:
    - WiFi configuration is saved in NVS and persists after power loss
-   - Clearing configuration requires button long press or re-provisioning
+   - To clear configuration, you need to re-provision via web interface
 
 5. **Time Synchronization**:
    - First use requires WiFi configuration to sync time
@@ -329,7 +298,7 @@ Namespace isolation ensures they don't affect each other.
 1. Check if DS3231 is working properly (check serial logs)
 2. Confirm WiFi is connected and NTP time sync succeeded
 3. Check if timezone setting is correct (default UTC+8)
-4. If not synced for a long time, use button long press to force sync
+4. If not synced for a long time, wait for the next automatic sync cycle (every 30 days)
 
 ### Issue: OLED Display Shows Nothing
 
@@ -339,14 +308,6 @@ Namespace isolation ensures they don't affect each other.
 3. Try modifying I2C address in code (`0x3C` or `0x3D`)
 4. Check if display is damaged (try another SSD1306 module)
 
-### Issue: Button Not Responding
-
-**Solutions**:
-1. Check if button connection is correct (GPIO3)
-2. Confirm button press is low level (code has pull-up enabled)
-3. Check if button is damaged
-4. Check serial logs to confirm if GPIO initialization succeeded
-
 ## 📝 Changelog
 
 ### v1.0.0 (Current Version)
@@ -355,7 +316,6 @@ Namespace isolation ensures they don't affect each other.
 - ✅ Implemented SSD1306 OLED display functionality
 - ✅ Implemented WiFi provisioning (SoftAP mode)
 - ✅ Implemented NTP time synchronization
-- ✅ Implemented button long press provisioning
 - ✅ Implemented auto brightness adjustment
 - ✅ Implemented pixel shift burn-in prevention
 - ✅ Implemented low power design (intelligent WiFi management)

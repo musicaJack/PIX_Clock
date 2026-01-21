@@ -21,7 +21,7 @@ static const char *TAG = "wifi_prov";
 #define NVS_KEY_PASSWORD       "password"
 
 // SoftAP 配置
-#define SOFTAP_SSID            "VFD_Clock_Setup"
+#define SOFTAP_SSID            "PIX_Clock_Setup"
 #define SOFTAP_PASSWORD        "12345678"
 #define SOFTAP_CHANNEL         1
 #define SOFTAP_MAX_CONNECTIONS 4

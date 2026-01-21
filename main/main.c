@@ -38,10 +38,6 @@
 // SSD1306 I2C地址（常见为0x3C，如果不行可以尝试0x3D）
 #define SSD1306_I2C_ADDR   SSD1306_I2C_ADDR_0  // 0x3C
 
-// 按键引脚
-#define BUTTON_GPIO        GPIO_NUM_3   // 按键GPIO
-#define BUTTON_LONG_PRESS_MS  3000      // 长按时间：3秒
-
 // WiFi配置
 #define WIFI_MAX_RETRY      5
 #define WIFI_CONNECT_TIMEOUT_MS  15000  // WiFi连接超时时间：15秒
@@ -71,10 +67,7 @@ static bool s_in_provisioning_mode = false;
 static bool s_need_wifi_scan = false;  // 标记是否需要扫描 WiFi
 static bool s_need_enter_provisioning = false;  // 标记是否需要进入配网模式
 static bool s_need_ntp_sync = false;  // 标记是否需要同步NTP（全局变量，供主循环使用）
-static bool s_button_triggered_provisioning = false;  // 标记是否通过按键触发的配网模式
 static bool s_force_ntp_sync = false;  // 标记是否需要强制NTP同步（忽略720小时限制）
-static int64_t s_button_press_start_time = 0;  // 按键按下开始时间
-static bool s_button_pressed = false;  // 按键是否按下
 
 // 时间结构
 typedef struct {
@@ -294,7 +287,7 @@ static bool should_sync_ntp(void)
     static bool force_sync_logged = false;
     if (s_force_ntp_sync) {
         if (!force_sync_logged) {
-            ESP_LOGI(TAG, "Force NTP sync requested (button-triggered provisioning)");
+            ESP_LOGI(TAG, "Force NTP sync requested");
             force_sync_logged = true;
         }
         return true;
@@ -352,44 +345,6 @@ static bool should_sync_ntp(void)
     return false;
 }
 
-// GPIO中断处理函数（IRAM中执行，需要快速返回）
-static void IRAM_ATTR button_isr_handler(void* arg)
-{
-    // 在中断中只记录时间戳，具体处理在主循环中
-    // 注意：esp_timer_get_time() 是IRAM安全的
-    int64_t now = esp_timer_get_time() / 1000;  // 转换为毫秒
-    int level = gpio_get_level(BUTTON_GPIO);
-    
-    if (level == 0) {  // 按键按下（假设低电平为按下）
-        if (!s_button_pressed) {
-            s_button_press_start_time = now;
-            s_button_pressed = true;
-        }
-    } else {  // 按键释放
-        s_button_pressed = false;
-        s_button_press_start_time = 0;
-    }
-}
-
-// 初始化按键GPIO
-static void init_button_gpio(void)
-{
-    gpio_config_t io_conf = {
-        .intr_type = GPIO_INTR_ANYEDGE,  // 上升沿和下降沿都触发
-        .mode = GPIO_MODE_INPUT,
-        .pin_bit_mask = (1ULL << BUTTON_GPIO),
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .pull_up_en = GPIO_PULLUP_ENABLE,  // 启用上拉，按键按下为低电平
-    };
-    gpio_config(&io_conf);
-    
-    // 安装GPIO中断服务
-    gpio_install_isr_service(0);
-    gpio_isr_handler_add(BUTTON_GPIO, button_isr_handler, NULL);
-    
-    ESP_LOGI(TAG, "Button GPIO%d initialized", BUTTON_GPIO);
-}
-
 // WiFi 连接状态回调
 static void wifi_status_callback(bool connected, const char* ip)
 {
@@ -404,14 +359,6 @@ static void wifi_status_callback(bool connected, const char* ip)
             ESP_LOGI(TAG, "Stopping provisioning mode");
             wifi_provisioning_stop_softap();
             s_in_provisioning_mode = false;
-            
-            // 如果是按键触发的配网模式，标记需要强制NTP同步
-            // 注意：配置已在按键长按时清除，新配置已保存，无需再次清除
-            if (s_button_triggered_provisioning) {
-                ESP_LOGI(TAG, "Button-triggered provisioning completed. Will force NTP sync.");
-                s_force_ntp_sync = true;
-                s_button_triggered_provisioning = false;
-            }
         }
     } else {
         ESP_LOGI(TAG, "WiFi disconnected");
@@ -720,10 +667,6 @@ void app_main(void)
     // 显示初始时间
     displayTime(&currentTime);
     
-    // 初始化按键GPIO
-    ESP_LOGI(TAG, "Initializing button GPIO...");
-    init_button_gpio();
-    
     // 初始化 WiFi 配网模块（内部已注册事件处理器）
     ESP_LOGI(TAG, "Initializing WiFi provisioning module...");
     ESP_ERROR_CHECK(wifi_provisioning_init());
@@ -743,14 +686,14 @@ void app_main(void)
                                                         &instance_got_ip));
     
     // 优先检查是否有保存的 WiFi 配置
-    // 如果没有配置，直接进入配网模式（不依赖按键）
+    // 如果没有配置，直接进入配网模式
     ESP_LOGI(TAG, "Checking for saved WiFi config in NVS...");
     bool has_wifi_config = wifi_provisioning_has_config();
     
     if (!has_wifi_config) {
         // 没有WiFi配置，自动启动 SoftAP 配网模式
         ESP_LOGI(TAG, "No WiFi config found in NVS. Automatically entering provisioning mode...");
-        ESP_LOGI(TAG, "Please connect to WiFi hotspot 'VFD_Clock_Setup' and open http://192.168.4.1");
+        ESP_LOGI(TAG, "Please connect to WiFi hotspot 'PIX_Clock_Setup' and open http://192.168.4.1");
         s_in_provisioning_mode = true;
         ESP_ERROR_CHECK(wifi_provisioning_start_softap(wifi_status_callback));
     } else {
@@ -829,48 +772,6 @@ void app_main(void)
     while (1) {
         TickType_t now = xTaskGetTickCount();
         
-        // 检测按键长按（3秒）
-        if (s_button_pressed && s_button_press_start_time > 0) {
-            int64_t now_ms = esp_timer_get_time() / 1000;  // 转换为毫秒
-            int64_t press_duration = now_ms - s_button_press_start_time;
-            
-            if (press_duration >= BUTTON_LONG_PRESS_MS) {
-                // 检测到长按，进入配网模式
-                ESP_LOGI(TAG, "Button long press detected (%lld ms), entering provisioning mode...", press_duration);
-                s_button_pressed = false;  // 重置状态，避免重复触发
-                s_button_press_start_time = 0;
-                s_button_triggered_provisioning = true;  // 标记为按键触发
-                
-                // 停止当前的WiFi（无论是Station还是SoftAP模式）
-                esp_err_t ret = esp_wifi_stop();
-                if (ret != ESP_OK && ret != ESP_ERR_WIFI_NOT_STARTED) {
-                    ESP_LOGW(TAG, "Failed to stop WiFi: %s", esp_err_to_name(ret));
-                }
-                vTaskDelay(pdMS_TO_TICKS(500));  // 等待WiFi完全停止
-                
-                // 如果WiFi已经停止，需要确保WiFi模块可以重新启动
-                // wifi_provisioning_start_softap 内部会处理WiFi初始化
-                
-                // 清除旧的WiFi配置（强制重置，避免主循环立即检测到旧配置而退出配网模式）
-                ESP_LOGI(TAG, "Clearing WiFi config (button-triggered reset)...");
-                wifi_provisioning_clear_config();
-                
-                // 重置重试计数和NTP相关标志
-                s_retry_num = 0;
-                s_force_ntp_sync = true;  // 按键触发配网后强制NTP同步
-                
-                // 启动SoftAP配网模式
-                s_in_provisioning_mode = true;
-                ret = wifi_provisioning_start_softap(wifi_status_callback);
-                if (ret != ESP_OK) {
-                    ESP_LOGE(TAG, "Failed to start provisioning mode: %s", esp_err_to_name(ret));
-                    s_button_triggered_provisioning = false;
-                } else {
-                    ESP_LOGI(TAG, "Provisioning mode started (button-triggered). Connect to 'VFD_Clock_Setup' and visit http://192.168.4.1");
-                }
-            }
-        }
-        
         // 如果需要扫描 WiFi（在主循环中执行，避免事件处理函数栈溢出）
         if (s_need_wifi_scan) {
             s_need_wifi_scan = false;
@@ -903,7 +804,7 @@ void app_main(void)
             if (ret != ESP_OK) {
                 ESP_LOGE(TAG, "Failed to start provisioning mode: %s", esp_err_to_name(ret));
             } else {
-                ESP_LOGI(TAG, "Provisioning mode started. Connect to 'VFD_Clock_Setup' and visit http://192.168.4.1");
+                ESP_LOGI(TAG, "Provisioning mode started. Connect to 'PIX_Clock_Setup' and visit http://192.168.4.1");
             }
         }
         
@@ -957,7 +858,7 @@ void app_main(void)
                 if (ip_info.ip.addr != 0) {
                     ESP_LOGI(TAG, "WiFi connected, initializing SNTP...");
                     if (s_force_ntp_sync) {
-                        ESP_LOGI(TAG, "Force NTP sync mode (button-triggered provisioning)");
+                        ESP_LOGI(TAG, "Force NTP sync mode");
                     }
                     sntp_init_func();
                     ntp_initialized = true;

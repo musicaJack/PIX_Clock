@@ -1,0 +1,19 @@
+{
+  "C_Cpp.intelliSenseEngine": "default",
+  "idf.espIdfPathWin": "C:/Users/sh_mu/.espressif/tools/frameworks/esp-idf-v5.5/",
+  "idf.pythonInstallPath": "C:\\Users\\sh_mu\\.espressif\\tools\\tools\\idf-python\\3.11.2\\python.exe",
+  "idf.openOcdConfigs": [
+    "board/esp32c3-builtin.cfg"
+  ],
+  "idf.portWin": "COM15",
+  "idf.toolsPathWin": "C:\\Users\\sh_mu\\.espressif\\tools",
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32c3"
+  },
+  "clangd.path": "C:\\Users\\sh_mu\\.espressif\\tools\\tools\\esp-clang\\esp-19.1.2_20250312\\esp-clang\\bin\\clangd.exe",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=c:\\Users\\sh_mu\\code\\esp32_c3_futaba\\build"
+  ]
+}
